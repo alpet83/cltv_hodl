@@ -38,7 +38,6 @@ const keyPair = bitcoin.ECPair.fromWIF(privKey, network);
 
 init_tx = 1;
 
-// Replace the lockTime value on second run here!
 buff = ''
 
 cfname = './config.json';

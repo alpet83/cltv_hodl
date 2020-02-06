@@ -38,7 +38,9 @@ if (0 == config.lockTime || "" == config.txid) {
 }
 
 dt = new Date(config.lockTime * 1000);
-console.log('CHECK CAREFULLY: Timelock in UNIX timestamp for '.brightYellow + dt.toUTCString().brightGreen + ' = '.brightWhite + config.lockTime.toString().brightMagenta);
+const hodl_ts = dt.toUTCString();
+
+console.log('CHECK CAREFULLY: Timelock in UNIX timestamp for '.brightYellow + hodl_ts.brightGreen + ' = '.brightWhite + config.lockTime.toString().brightMagenta);
 
 // Generate witness script and P2WSH address
 const ws_buff = Buffer.from(config.witness_script, 'hex');
@@ -101,4 +103,12 @@ console.log(witnessStack.map(x => x.toString('hex')))
 tx.setWitness(0, witnessStack);
 
 // Print
-console.log('TXRAW="' + tx.toHex().brightWhite + '"');
+
+const txraw = tx.toHex();
+console.log('TXRAW="' + txraw.brightWhite + '"');
+
+const opts = { encoding: "utf8", mode: 0600, flag: "a" } 
+
+const msg = 'hodl at [' + config.hodl_addr + '] until [' + hodl_ts + '] return to [' + receiver + '], TXRAW=[' + txraw + "]\n";
+
+fs.writeFileSync("txlist.txt", msg, opts);
