@@ -9,6 +9,8 @@
 //
 const { execSync } = require('child_process');
 const bitcoin = require('bitcoinjs-lib');
+const ECPairFactory  = require('ecpair');
+const ecc = require('tiny-secp256k1');
 const colors = require('colors');
 // const network = bitcoin.networks.regtest
 const network = bitcoin.networks.bitcoin
@@ -32,9 +34,13 @@ if (!fs.existsSync('./hodlmaster_key.json')) {
   console.log('#FATAL: Not found private key file!');
   return;
 }
+
+
+const ECPair = ECPairFactory.ECPairFactory(ecc);
+
 // Transaction signer
 const privKey = require('./hodlmaster_key.json').toString();
-const keyPair = bitcoin.ECPair.fromWIF(privKey, network);
+const keyPair = ECPair.fromWIF(privKey, network);
 
 init_tx = 1;
 
@@ -57,10 +63,8 @@ if (init_tx) {
   const hodl_ts = fs.readFileSync('hodl_ts').toString().trim();
   // console.log('Loaded hold timestamp: ' + hodl_dt.toUTCString());  
   seconds = Math.floor(Date.parse(hodl_ts) / 1000);
-
   console.log("UNIX Timestamp: " + seconds);
   if (isNaN (seconds)) return;
-
   lockTime = bip65.encode({utc: seconds}) // 
   config.lockTime = lockTime;
 }

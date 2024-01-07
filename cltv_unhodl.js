@@ -7,8 +7,11 @@
  * */
 
 //
+const { execSync } = require('child_process');
 const bitcoin = require('bitcoinjs-lib');
 const colors = require('colors');
+const ECPairFactory  = require('ecpair');
+const ecc = require('tiny-secp256k1');
 // const network = bitcoin.networks.regtest
 const network = bitcoin.networks.bitcoin
 const hashType = bitcoin.Transaction.SIGHASH_ALL
@@ -16,15 +19,18 @@ const bip65 = require('bip65')
 const fs = require('fs')
 const args = process.argv.slice(2);
 const Buffer = require('safe-buffer').Buffer;
+const psbtutils = require('bitcoinjs-lib/src/psbt/psbtutils');
 
 // WARNING: need receiver privkey & pubkey pair!
 if (!fs.existsSync('./hodlmaster_key.json')) {
   console.log('#FATAL: Not found private key file!');
   return;
 }
+
+const ECPair = ECPairFactory.ECPairFactory(ecc);  
 // Transaction signer
 const privKey = require('./hodlmaster_key.json').toString();
-const keyPair = bitcoin.ECPair.fromWIF(privKey, network)
+const keyPair = ECPair.fromWIF(privKey, network)
 
 // Replace the lockTime value on second run here!
 buff = ''
@@ -45,69 +51,92 @@ console.log('CHECK CAREFULLY: Timelock in UNIX timestamp for '.brightYellow + ho
 // Generate witness script and P2WSH address
 const ws_buff = Buffer.from(config.witness_script, 'hex');
 const p2wsh = bitcoin.payments.p2wsh({redeem: {output: ws_buff, network}, network})
+const redeemScript = p2wsh.redeem.output;
+
 // there coins can be hodl over years...
 if (config.hodl_addr != p2wsh.address) {
   console.log('#ERROR: mistmatch hold_addr, generated ['.brightRed + p2wsh.address + '] vs saved ['.brightRed + config.hodl_addr + ']'.brightRed);
   return;
 }
 
-// Build transaction
-const txb = new bitcoin.TransactionBuilder(network)
-txb.setLockTime(config.lockTime)
 
-// txb.addInput(prevTx, input.vout, input.sequence, prevTxScript)
-txb.addInput(config.txid, config.vout, 0xfffffffe)
+const psbt = new bitcoin.Psbt( { network:network } );
+psbt.setLocktime(config.lockTime);
+
+psbt.addInput( { 
+   hash:config.txid, 
+   index:config.vout,   // 0 for first hodl tx, 1 for second... 
+   sequence:0xfffffffe,
+   witnessScript: ws_buff,
+   nonWitnessUtxo: Buffer.from(config.tx_hex, 'hex'),
+   redeemScript
+  });
 
 
 var receiver = 'bc1qa5judde8fftgu92rv29vlelw0dpr66nh0wdnut'; // alpet donation addr
-
 if (args[0])
    receiver = args[0]; // override receiver
 else
   console.log("#WARN: using embedded receiver address ".brightRed + receiver.brightWhite);
 
-// WARN:  be carefull with payment values, or you can overpay fee!!!
 var totalInput = config.total_hodl; // 1BTC
 
 if (args[1])
    totalInput = parseFloat(args[1]);
 
 totalInput = Math.floor(totalInput * 100000000); // convert to Satoshis
-var totalOutput = totalInput - 5000;
+var totalOutput = totalInput - 27000; // WARN: specify yours fee here
 
 console.log ("#WARN: totalInput used ".red + totalInput.toString().brightMagenta + " sat.!".red);
 
-txb.addOutput(receiver, totalOutput) // to whom and how much money to send?
+psbt.addOutput({address:receiver, value:totalOutput}) // to whom and how much money to send?
 
-const tx = txb.buildIncomplete()
+const wsDump = execSync('bitcoin-cli decodescript ' + config.witness_script);
+const pubkey = keyPair.publicKey.toString('hex');
+console.log("#WITNESS_SCRIPT: " + wsDump);
+if (wsDump.includes(pubkey))
+  console.log("#OK: publicKey used in script".brightGreen);
+else {
+  console.log("#FATAL: publicKey not used in script ".brightRed + pubkey.brightWhite);
+  console.log(keyPair);
+  return;
+}
+  
+const signer = {
+  network: network,
+  publicKey: keyPair.publicKey,
+  /**  @param {Buffer} $hash */
+  sign: ($hash) => {   
+    return keyPair.sign($hash); 
+  },
+};
 
-// hashForWitnessV0(inIndex, prevOutScript, value, hashType)
-const signatureHash = tx.hashForWitnessV0(0, ws_buff, totalInput, hashType)
-console.log('signature hash: ', signatureHash.toString('hex'))
+psbt.signInput(0, signer);
 
-// payback script, only Alice can spend funds for anybody!
-// + it can be generated any time!
-const witnessStack = bitcoin.payments.p2wsh({
-  redeem: {
-    input: bitcoin.script.compile([
-      bitcoin.script.signature.encode(keyPair.sign(signatureHash), hashType)
-    ]),
-    output: ws_buff  // funds source - script!
-  }
-}).witness
+const finalizeInput = (_inputIndex, input ) => {
+  const signature = input.partialSig[0].signature;
+  // console.log("#SIGNATURE: " + signature);
 
-console.log('Unhodl witness stack:')
-console.log(witnessStack.map(x => x.toString('hex')))
+  const redeemPayment = bitcoin.payments.p2wsh({
+      redeem: {
+        input: bitcoin.script.compile([signature]),
+        output: input.witnessScript
+      }
+    });
 
-// Choose a scenario and set the witness stack
-tx.setWitness(0, witnessStack);
+    const result = psbtutils.witnessStackToScriptWitness (redeemPayment.witness ?? []);
+    return { finalScriptSig: Buffer.from(""), 
+             finalScriptWitness:result }
+}
 
-// Print
-
-const txraw = tx.toHex();
+psbt.finalizeInput(0, finalizeInput)
+;
+const txraw = psbt.extractTransaction().toHex();
 console.log('TXRAW="' + txraw.brightWhite + '"');
 
-const opts = { encoding: "utf8", mode: 0600, flag: "a" } 
+
+
+const opts = { encoding: "utf8", mode: 0600, flag: "a" };
 
 const msg = 'hodl at [' + config.hodl_addr + '] until [' + hodl_ts + '] return to [' + receiver + '], TXRAW=[' + txraw + "]\n";
 
