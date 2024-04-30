@@ -48,23 +48,32 @@ try {
 
   if (txinfo.vin)
    txinfo.vin.forEach(vin => { 
-      if (vin.txid == txid && vin.txinwitness) {
+      console.log("#CHECK_TX: " + vin.txid); //
+      if (vin.txid == txid && vin.txinwitness) { // possible never exec
         config.witness_script = vin.txinwitness[1];
+        console.log("#OK: Witness script found ".brightWhite);
       }
     });
    
+  assigned = false;
   if (txinfo.vout)  
    txinfo.vout.forEach(vout => { 
    
      console.log('#' + vout.n + ' addr: ' + vout.scriptPubKey.address);
      if (vout.scriptPubKey.address == config.hodl_addr) {
        config.vout  = vout.n;
+       config.txid = txid.trim(); 
        config.tx_hex = txraw.replace(/^\s+|\s+$/g, ''); // remove \n
-       config.total_hold = vout.value;
+       config.total_hodl = vout.value;
        str = JSON.stringify(config);
        console.log("Updated config: " + str.brightCyan);
-       fs.writeFileSync('./config.json', str);
-     }
+       fs.writeFileSync('./config.json', str);       
+       assigned = true;
+       return;
+     } 
+    else
+     if (!assigned)
+        console.log("#REJECTED: ".brightRed + " due mismatch with hold_addr ");
     
   });
   

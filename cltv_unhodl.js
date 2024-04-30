@@ -15,7 +15,6 @@ const ecc = require('tiny-secp256k1');
 // const network = bitcoin.networks.regtest
 const network = bitcoin.networks.bitcoin
 const hashType = bitcoin.Transaction.SIGHASH_ALL
-const bip65 = require('bip65')
 const fs = require('fs')
 const args = process.argv.slice(2);
 const Buffer = require('safe-buffer').Buffer;
@@ -49,6 +48,10 @@ const hodl_ts = dt.toUTCString();
 console.log('CHECK CAREFULLY: Timelock in UNIX timestamp for '.brightYellow + hodl_ts.brightGreen + ' = '.brightWhite + config.lockTime.toString().brightMagenta);
 
 // Generate witness script and P2WSH address
+if (!config.witness_script) {
+  console.log("#ERROR: not specified witness script in config");
+  return; 
+}
 const ws_buff = Buffer.from(config.witness_script, 'hex');
 const p2wsh = bitcoin.payments.p2wsh({redeem: {output: ws_buff, network}, network})
 const redeemScript = p2wsh.redeem.output;
