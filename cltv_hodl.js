@@ -7,6 +7,7 @@
  * */
 
 //
+const tools = require('uint8array-tools');
 const { execSync } = require('child_process');
 const bitcoin = require('bitcoinjs-lib');
 const ECPairFactory  = require('ecpair');
@@ -20,14 +21,19 @@ const fs = require('fs')
 
 // Witness script, should allow spending after now() >= lockTime if actual signature
 function cltvCheckSigOutput (aQ, lockTime) {
-  return bitcoin.script.compile([
-    aQ.publicKey,				// push pubkey from transaction signer
-    bitcoin.opcodes.OP_CHECKSIGVERIFY,
-    bitcoin.script.number.encode(lockTime),
-    bitcoin.opcodes.OP_CHECKLOCKTIMEVERIFY, 
-    bitcoin.opcodes.OP_DROP,      		// pop lockTime from stack
-    bitcoin.opcodes.OP_TRUE
-  ])
+  return bitcoin.script.fromASM(
+    `
+        ${tools.toHex(aQ.publicKey)}
+        OP_CHECKSIGVERIFY
+        ${tools.toHex(bitcoin.script.number.encode(lockTime))}
+        OP_CHECKLOCKTIMEVERIFY
+        OP_DROP            
+        OP_TRUE
+  `
+      .trim()
+      .replace(/\s+/g, ' '),
+  ); 
+  
 }
 
 if (!fs.existsSync('./hodlmaster_key.json')) {
@@ -41,6 +47,12 @@ const ECPair = ECPairFactory.ECPairFactory(ecc);
 // Transaction signer
 const privKey = require('./hodlmaster_key.json').toString();
 const keyPair = ECPair.fromWIF(privKey, network);
+
+ if (0 == keyPair.publicKey) {
+    console.log('#ERROR: public key not retrieved from private');
+    return;
+}
+console.log("Public key: " + keyPair.publicKey.toString('hex').brightWhite);
 
 init_tx = 1;
 

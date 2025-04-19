@@ -6,7 +6,7 @@ then
  exit
 fi
 
-PK=`bitcoin-cli dumpprivkey $1`
+PK=`bitcoin-cli --rpcwallet=$1 dumpprivkey $2`
 echo '["'$PK'"]' > hodlmaster_key.json
 
 
